@@ -67,6 +67,11 @@ const attemptSchema = new Schema(
       alerts: { type: Number, default: 0 },
       snapshots: { type: Number, default: 0 },
     },
+    terminated: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   { timestamps: true }
 );

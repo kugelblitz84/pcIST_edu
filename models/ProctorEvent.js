@@ -2,7 +2,19 @@ import mongoose from 'mongoose';
 
 const { Schema, model } = mongoose;
 
-const eventTypes = ['tab-switch', 'window-blur', 'fullscreen-exit', 'webcam-capture', 'warning', 'info'];
+const eventTypes = [
+  'tab-switch',
+  'window-blur',
+  'fullscreen-exit',
+  'webcam-capture',
+  'screen-capture',
+  'window-focus-change',
+  'exam-started',
+  'exam-ended',
+  'proctoring-alert',
+  'warning',
+  'info',
+];
 
 const proctorEventSchema = new Schema(
   {

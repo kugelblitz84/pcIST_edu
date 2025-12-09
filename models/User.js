@@ -12,6 +12,12 @@ const userSchema = new Schema(
       trim: true,
       maxlength: 120,
     },
+    slug:{
+      type: String,
+      required: true,
+      trim: true,
+      unique: true,
+    },
     email: {
       type: String,
       required: true,
@@ -29,6 +35,15 @@ const userSchema = new Schema(
       enum: roles,
       default: 'student',
       index: true,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
     },
   },
   { timestamps: true }

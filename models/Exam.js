@@ -15,6 +15,12 @@ const examSchema = new Schema(
       trim: true,
       maxlength: 2000,
     },
+    proctoredBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true,
+    },
     startTime: {
       type: Date,
       required: true,
@@ -49,5 +55,6 @@ const examSchema = new Schema(
 
 examSchema.index({ startTime: 1, endTime: 1 });
 examSchema.index({ createdBy: 1 });
+examSchema.index({ proctoredBy: 1 }); 
 
 export default model('Exam', examSchema);
