@@ -1,7 +1,14 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const getJwtSecret = () => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error('JWT_SECRET environment variable is not defined');
+    }
+    return secret;
+};
+
 const authenticate = ({ role }) => async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if(!authHeader || !authHeader.startsWith('Bearer ')){
@@ -12,7 +19,7 @@ const authenticate = ({ role }) => async (req, res, next) => {
         return res.status(401).json({message: 'No token provided, not authorised'});
     }
     try{
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, getJwtSecret());
         if(Date.now() >= decoded.exp * 1000){
             return res.status(401).json({message: 'Token expired, please login again'});
         }

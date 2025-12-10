@@ -4,12 +4,18 @@ import User from '../models/User.js';
 import slugify from 'slugify';
 import validator from 'validator';
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
+const getJwtSecret = () => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error('JWT_SECRET environment variable is not defined');
+    }
+    return secret;
+};
 
 const createToken = ({ id, slug, role, email, name }) => {
-    return jwt.sign({ id, slug, role, email, name }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    return jwt.sign({ id, slug, role, email, name }, getJwtSecret(), { expiresIn: JWT_EXPIRES_IN });
 }
 const registerStudent = async (req, res) => {
     try {
@@ -30,7 +36,7 @@ const registerStudent = async (req, res) => {
             return res.status(400).json({ message: 'Email is already registered.' });
         }
         const slug = slugify(email, { lower: true });
-        const salt = await bcrypt.gensalt(10);
+        const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = new User({
@@ -79,7 +85,7 @@ const registerTeacher = async (req, res) => {
             return res.status(400).json({ message: 'Email is already registered.' });
         }
         const slug = slugify(email, { lower: true });
-        const salt = await bcrypt.gensalt(10);
+        const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
         const newUser = new User({
             name,
