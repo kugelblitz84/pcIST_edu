@@ -88,12 +88,12 @@ io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
     socket.on('user_online', async (userId) => {
         socket.userId = userId;
-        await User.findByIdAndUpdate(userId, { isActive: true});
+        await User.findByIdAndUpdate(userId, { isActive: true });
     });
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
-        if(socket.userId){
-            User.findByIdAndUpdate(socket.userId, { isActive: false}).catch((err) => {
+        if (socket.userId) {
+            User.findByIdAndUpdate(socket.userId, { isActive: false }).catch((err) => {
                 console.error('Error updating user status on disconnect:', err);
             });
         }

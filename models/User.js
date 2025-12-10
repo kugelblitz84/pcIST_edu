@@ -12,7 +12,7 @@ const userSchema = new Schema(
       trim: true,
       maxlength: 120,
     },
-    slug:{
+    slug: {
       type: String,
       required: true,
       trim: true,
@@ -48,7 +48,5 @@ const userSchema = new Schema(
   },
   { timestamps: true }
 );
-
-userSchema.index({ email: 1 }, { unique: true });
 
 export default model('User', userSchema);
