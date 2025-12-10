@@ -39,6 +39,12 @@ const examSchema = new Schema(
       ref: 'User',
       required: true,
     },
+    questions:[
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'Question',
+      }
+    ],
     totalPoints: {
       type: Number,
       default: 0,

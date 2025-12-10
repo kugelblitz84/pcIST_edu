@@ -138,5 +138,29 @@ const loginUser = async (req, res) => {
     }
 };
 
+const setUserRole = async (req, res) => {
+    try {
+        const { userId, role } = req.body;
+        const user = req.user;
+        if (user.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: only Admins can set user roles' });
+        }
+        const validRoles = ['student', 'teacher', 'admin', 'proctor'];
+        if (!validRoles.includes(role)) {
+            return res.status(400).json({ message: 'Invalid role specified' });
+        }
+        const targetUser = await User.findById(userId);
+        if (!targetUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        targetUser.role = role;
+        await targetUser.save();
+        res.status(200).json({ message: 'User role updated successfully' });
+    } catch (error) {
+        console.error('Error in setUserRole:', error);
+        res.status(500).json({ message: 'Server error. Please try again later.' });
+    }
+};
 
-export { registerStudent, registerTeacher, loginUser };
+
+export { registerStudent, registerTeacher, loginUser, setUserRole };

@@ -1,97 +1,120 @@
 # Project Documentation
 
-## Overview
-- Web-based proctored exam platform (soft proctoring: tab/focus/fullscreen detection, webcam snapshots, event logging).
-- Stack: Node.js/Express backend with MongoDB (Mongoose ODM) and Socket.IO for real-time signals. Frontend is expected (not present in this repo) to consume REST and Socket.IO endpoints per README.
-- Current codebase status: models are defined; server wiring is partially stubbed (routes not imported; HTTP listener not started; DB path reference needs adjustment). Use this doc to understand data contracts and integration points.
+Updated for the current backend (Express + MongoDB + Socket.IO) with implemented routes and controllers.
+
+## Quick Start
+- Install deps: `npm install`
+- Env: `.env` with `MONGO_URI`, `JWT_SECRET`, optional `PORT` (default 5000) and `JWT_EXPIRES_IN` (default 7d)
+- Run: `node server.js` (already calls `server.listen`)
+- Health: `GET /` → `API running`
 
 ## Project Structure (backend)
-- `app.js` – Express app setup, JSON/CORS, route mounts (placeholders: `authRoutes`, `examRoutes`, `resultRoutes`, `attemptRoutes`, `userRoutes`, `proctorRoutes`).
-- `server.js` – HTTP + Socket.IO setup, dotenv load, DB connect; missing `server.listen` and correct DB import path.
-- `confgis/db.js` – Mongo connection helper (uses `MONGO_URI` and appends `/pcistEdu`).
-- `models/` – Mongoose models: `User`, `Exam`, `Question`, `Attempt`, `ProctorEvent`, `WebcamSnapshot`.
-- `README.md` – High-level product spec and setup guidance.
+- `app.js` – Express setup, mounts `/api/auth`, `/api/exams`, `/api/results`, `/api/users`, `/api/proctoring`
+- `server.js` – HTTP + Socket.IO, cron for periodic screenshot requests, static `/screenshots` serving, DB connect via `confgis/db.js`
+- `confgis/db.js` – Mongo connection helper (uses `MONGO_URI` as-is)
+- `controllers/` – auth, exam, proctoring, user logic
+- `routes/` – Express routers wired to controllers
+- `models/` – `User`, `Exam`, `Question`, `Attempt`, `ProctorEvent`, `WebcamSnapshot`
 
-## Environment
-- Env var: `MONGO_URI` (base connection string; code appends `/pcistEdu`).
-- Optional: `PORT` (server fallback 5000).
-- Add typical vars for auth/security (e.g., `JWT_SECRET`, token TTL) when wiring controllers.
+## Models (high level)
+- `User`: `name`, `email`, `password` (hash in controllers), `role` in `student|teacher|proctor|admin`, `isActive`
+- `Exam`: `title`, `description`, `proctoredBy` (User), `startTime`, `endTime`, `durationMinutes`, `createdBy`, optional `questions` array placeholder
+- `Question`: belongs to `Exam`, supports `mcq|short|long`, `options`, `correctAnswer`, `points`, `order`
+- `Attempt`: `exam`, `student`, `answers[]` (question/response/isCorrect/score), `status`, `startedAt`, `submittedAt`, `durationSeconds`, `proctoringSummary`, `terminated`
+- `ProctorEvent`: `attempt`, `eventType`, `message`, `metadata`, timestamps
+- `WebcamSnapshot`: `attempt`, `imageData` (base64), `mimeType`, `capturedAt`
 
-## Models (Mongoose)
-### User (`models/User.js`)
-- Fields: `name`, `email` (unique, lowercase), `password` (stored as provided; hash in controllers), `role` (`student|teacher|proctor|admin`).
-- Indexes: unique `email`, index on `role`.
+## REST API
+Base URL: `http://<host>:<port>` (default 5000). Send `Authorization: Bearer <JWT>` for protected routes.
 
-### Exam (`models/Exam.js`)
-- Fields: `title`, `description`, `startTime`, `endTime`, `durationMinutes`, `createdBy` (ref User), `totalPoints`, `isPublished`.
-- Indexes: compound `{ startTime, endTime }` for window queries; `createdBy`; `isPublished`.
+### Auth (`/api/auth`)
+- `POST /registerStudent` – `{ name, email, password }`
+- `POST /registerTeacher` – admin only – `{ name, email, password }`
+- `POST /login` – `{ email, password }` → `{ token }`
+- `POST /setUserRole` – admin only – `{ userId, role }` (role in student|teacher|proctor|admin)
 
-### Question (`models/Question.js`)
-- Fields: `exam` (ref Exam), `type` (`mcq|short|long`), `text`, `options` (array for MCQ), `correctAnswer` (mixed), `points`, `order`, `explanation`.
-- Indexes: `{ exam, order }` for ordered fetch per exam.
+Example (set role):
+```bash
+curl -X POST http://localhost:5000/api/auth/setUserRole \
+  -H "Authorization: Bearer <adminToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"<uid>","role":"proctor"}'
+```
 
-### Attempt (`models/Attempt.js`)
-- Fields: `exam` (ref Exam), `student` (ref User), `answers` (embedded: `question`, `response`, `isCorrect`, `score`), `score`, `status` (`in-progress|submitted|auto-submitted|graded`), `startedAt`, `submittedAt`, `durationSeconds`, `proctoringSummary` (`alerts`, `snapshots`).
-- Indexes: unique `{ exam, student }` to enforce single attempt per student per exam; indexes on `exam`, `student`, `status`.
+### Users (`/api/users`)
+- `GET /teacher/getUserData` – role teacher
+- `GET /student/getUserData` – role student
+- `GET /proctor/getUserData` – role proctor
+- `GET /admin/getUserData` – role admin
+- `GET /getStudentList` – roles admin|teacher
+- `GET /getTeacherList` – role admin
 
-### ProctorEvent (`models/ProctorEvent.js`)
-- Fields: `attempt` (ref Attempt), `eventType` (`tab-switch|window-blur|fullscreen-exit|webcam-capture|warning|info`), `message`, `metadata`, `createdAt` (default now).
-- Index: `{ attempt, createdAt: -1 }` for recent-first timelines.
+Example (student profile):
+```bash
+curl -H "Authorization: Bearer <studentToken>" \
+  http://localhost:5000/api/users/student/getUserData
+```
 
-### WebcamSnapshot (`models/WebcamSnapshot.js`)
-- Fields: `attempt` (ref Attempt), `imageData` (base64 string), `mimeType` (default `image/png`), `capturedAt`.
-- Index: `{ attempt, capturedAt: -1 }` for recent-first galleries.
+### Exams (`/api/exams`)
+- `POST /create` – teachers/admins – body: `{ title, description?, proctoredBy, startTime, endTime, questions? }`
+- `GET /getAll` – teachers/admins – list exams
+- `GET /proctored/:userId` – roles teacher|admin|proctor – exams proctored by user
+- `GET /student/:userId` – roles student|teacher|admin|proctor – attempts for a student (permissions enforced in controller)
+- `POST /startAttempt/:examId` – students – start attempt
+- `GET /questions/:examId` – students – fetch questions for exam
+- `POST /attempt/:attemptId/submit` – students – submit answers `{ answers: [...] }`
 
-## Routes & APIs (intended from `app.js` and README)
-- `GET /` – health check: "API running".
-- Placeholder mounts (implement controllers/routes accordingly):
-  - `/api/auth` – register/login/me, JWT issuance.
-  - `/api/users` – user management (roles: admin/teacher/proctor).
-  - `/api/exams` – CRUD exams, add questions.
-  - `/api/attempts` – start/submit attempts; fetch my attempts; teacher/proctor views.
-  - `/api/results` – scoring/grades (not yet implemented).
-  - `/api/proctoring` – log events, fetch events/snapshots.
+Example (create exam):
+```bash
+curl -X POST http://localhost:5000/api/exams/create \
+  -H "Authorization: Bearer <teacherToken>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title":"Midterm",
+    "description":"Chapters 1-3",
+    "proctoredBy":"<proctorUserId>",
+    "startTime":"2025-01-10T09:00:00Z",
+    "endTime":"2025-01-10T11:00:00Z"
+  }'
+```
 
-## Socket.IO Events (current logging only)
-- Listeners set up in `server.js` (no persistence yet):
-  - `tabSwitch`, `examStarted`, `examEnded`, `proctoringAlert`, `windowFocusChange` – currently log payloads; extend to emit/broadcast or persist.
-- CORS: allows all origins/methods (tighten for production).
+Example (submit answers):
+```bash
+curl -X POST http://localhost:5000/api/exams/attempt/<attemptId>/submit \
+  -H "Authorization: Bearer <studentToken>" \
+  -H "Content-Type: application/json" \
+  -d '{"answers":[{"question":"<questionId>","response":"B"}]}'
+```
 
-## Frontend Integration Notes
-- REST base URL: `http://<backend-host>:<PORT>`; CORS enabled globally.
-- Authentication: plan JWT in `Authorization: Bearer <token>`; ensure controllers issue and verify tokens; add role-based guards server-side.
-- Exams flow: frontend creates exams (teacher/admin), adds questions, lists exams, starts attempt (`/attempts`), submits with answers array; backend should validate duration and window (`startTime`/`endTime`), auto-submit on timeout.
-- Proctoring: frontend emits Socket.IO events for tab/focus/fullscreen changes; posts proctor events via REST; captures webcam snapshots (base64) to `/api/proctoring` (implement storage using `WebcamSnapshot`).
-- Ordering: fetch questions using `{ exam, order }` index; frontend should sort by `order` if backend does not.
+### Results (`/api/results`)
+- `GET /student/:userId` – roles student|teacher|admin|proctor – delegates to exam attempts lookup
 
-## Current Gaps / TODOs
-- `server.js` lacks `server.listen(PORT, ...)`; add to start HTTP server.
-- `connectDB` import path should be `./confgis/db.js` (or relocate to `/config/db.js`).
-- Route modules (`authRoutes`, etc.) not defined/imported; implement controllers/services, then wire imports.
-- Password hashing/verification not in models; perform hashing in auth controller (e.g., bcrypt) before save/update.
-- Add validation/middleware (auth, roles, request schemas), logging, error handling, and tests.
-- Consider moving `MONGO_URI` handling to include db name explicitly (avoid concatenation surprises).
+Example:
+```bash
+curl -H "Authorization: Bearer <teacherToken>" \
+  http://localhost:5000/api/results/student/<studentId>
+```
 
-## Setup (backend)
-1) Install deps: `npm install` (ensure `mongoose`, `express`, `cors`, `dotenv`, `socket.io`, plus `bcryptjs` for auth controllers).
-2) Env: create `.env` with `MONGO_URI`, `PORT`, `JWT_SECRET`, etc.
-3) Start server (after adding `server.listen`): `node server.js` or with nodemon.
-4) Verify `GET /` returns "API running" and Mongo connects.
+### Proctoring (`/api/proctoring`)
+- `GET /events` – roles teacher|admin – query: `attemptId?`, `eventType?`, `limit?`, `skip?`
 
-## Data Handling Conventions
-- IDs: Mongo ObjectIds; references align with model names above.
-- Time: stored as ISO dates; frontend should send ISO strings or timestamps.
-- Snapshots: `imageData` stored as base64 string; consider external storage for production and store URLs instead.
-- Scoring: `Attempt.answers[].score`/`isCorrect` to be computed server-side; maintain `Attempt.score` aggregate.
+Example:
+```bash
+curl -H "Authorization: Bearer <adminToken>" \
+  "http://localhost:5000/api/proctoring/events?attemptId=<attemptId>&limit=20"
+```
 
-## Security Notes
-- Add rate limiting, CORS origin allowlist, helmet, and proper token handling before production.
-- Enforce role checks on all protected routes.
+## Socket.IO (server.js)
+- Emits `request-screenshot { reason, requestedAt, examId?, attemptId? }` every 5 minutes and when tab/focus events occur.
+- Client emits supported: `user_online`, `tabSwitch`, `windowFocusChange`, `examStarted`, `examEnded`, `proctoringAlert`, `screenshot-upload` ({ examId, studentId, attemptId|attempt, imageData, mimeType }).
+- Server stores proctor events and screenshots to `storage/screenshots/<examId>/...` and marks attempts `terminated` on tab/focus violations.
 
-## Testing
-- No tests present. Add unit/integration tests for routes/controllers and model hooks; include e2e for exam flows and proctoring events.
+## Data Conventions
+- Time: ISO strings; server converts to Date
+- IDs: Mongo ObjectIds
+- Auth: JWT Bearer header checked by `authenticate` middleware with role guards
 
-## Change Log (current state)
-- Added Mongoose models: User, Exam, Question, Attempt (with embedded answers), ProctorEvent, WebcamSnapshot.
-- Removed model-level password hashing per request; controllers must handle hashing.
-- Socket.IO event logging scaffold present.
+## Notes / Gaps
+- Questions array in `Exam` is currently stored as provided; detailed question CRUD not yet wired beyond `getQuestionsForExam` lookup.
+- Add validation, rate limiting, stricter CORS, and socket auth for production.
+- No automated tests present; add coverage for auth, exams, attempts, and proctoring flows.
