@@ -141,3 +141,108 @@ curl -H "Authorization: Bearer <adminToken>" \
 - Questions array in `Exam` is currently stored as provided; detailed question CRUD not yet wired beyond `getQuestionsForExam` lookup.
 - Add validation, rate limiting, stricter CORS, and socket auth for production.
 - No automated tests present; add coverage for auth, exams, attempts, and proctoring flows.
+
+## Admin Portal Implementation Guide
+
+### Goals
+- Provide a guarded UI for admins to manage users, exams, and proctoring data.
+- Reuse existing REST + Socket.IO endpoints; no new backend endpoints are strictly required.
+- Keep security tight: JWT-based auth, role checks, and protected routes.
+
+### Prerequisites
+- Seed at least one admin account (see “how to creat admin” notes above) so you can obtain an admin JWT via `/api/auth/login`.
+- Decide on a frontend stack (React/Vite, Next.js, Vue, etc.). Steps below assume React + Vite for concreteness, but adapt as needed.
+
+### Project Setup
+1. Scaffold the app:
+  ```bash
+  npm create vite@latest admin-portal -- --template react
+  cd admin-portal
+  npm install axios react-router-dom
+  ```
+2. Create `.env` entries for the backend base URL:
+  ```bash
+  VITE_API_BASE_URL=http://localhost:5000
+  ```
+3. Plan for deployment (Netlify/Vercel/Static hosting) and ensure CORS on the backend allows your admin origin.
+
+### Authentication Flow
+- Build a `LoginPage` that posts to `/api/auth/login` with email/password.
+- Store the `{ token }` response in memory + `localStorage` (or secure cookie) and decode the JWT to confirm `role === 'admin'` before granting access.
+- Implement an `AuthProvider` (React context) that exposes `token`, `role`, and `logout()`.
+- Create a `ProtectedRoute` component that redirects to `/login` if no admin token is present.
+
+### Routing Structure
+Recommended routes inside the portal:
+- `/login` – admin login form.
+- `/dashboard` – KPIs (counts of users, exams, active alerts).
+- `/users` – tables for students/teachers/proctors with role change actions.
+- `/exams` – list + create/edit forms.
+- `/proctoring` – live feed/table of events and screenshots.
+- `/settings` (optional) – manage profile, change password, view audit logs.
+
+### API Client
+- Configure an Axios instance with `baseURL = import.meta.env.VITE_API_BASE_URL` and an interceptor that attaches `Authorization: Bearer <token>`.
+- Handle 401/403 responses globally: show a toast, then logout or redirect to login.
+- Example client:
+  ```javascript
+  const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL });
+  api.interceptors.request.use((config) => {
+    const token = authStore.getState().token;
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  });
+  ```
+
+### Key Admin Use Cases
+1. **Create Teachers/Staff**
+  - Form posts to `/api/auth/registerTeacher` with `{ name, email, password }`.
+  - Success: show toast, optionally trigger email invite.
+
+2. **Promote/Demote Users**
+  - Fetch lists:
+    - Students: `GET /api/users/getStudentList`
+    - Teachers: `GET /api/users/getTeacherList`
+  - Action buttons call `POST /api/auth/setUserRole` with `{ userId, role }`.
+
+3. **Monitor Users**
+  - Reuse the list responses to show status (`isActive`).
+  - Optional: add search/filter UI.
+
+4. **Exam Management**
+  - `GET /api/exams/getAll` for overview.
+  - `POST /api/exams/create` for new exams (ensure date pickers produce ISO strings).
+  - Extend backend if you need update/delete endpoints.
+
+5. **Proctoring Oversight**
+  - Table fed by `GET /api/proctoring/events?attemptId=<id>&limit=50`.
+  - Render screenshot URLs: `/screenshots/<examId>/<filename>` (served statically by backend).
+  - Consider websockets: connect to Socket.IO, listen for new events, and refresh.
+
+6. **Results Access**
+  - `GET /api/results/student/:userId` to review a student’s attempts.
+  - Display per-attempt scores and statuses.
+
+### UI/UX Tips
+- Apply a layout with a persistent sidebar + top bar for quick navigation.
+- Use a component library (e.g., MUI, Ant Design, Tailwind) for rapid forms/tables.
+- Show loading states, empty states, and error feedback for each data table.
+- Add confirmation dialogs before destructive actions (e.g., role changes).
+
+### Security Considerations
+- Never expose the admin portal without HTTPS in production.
+- Set strict CORS origins for the backend once you deploy.
+- Implement token refresh or short-lived JWTs with re-login to reduce risk.
+- Log admin actions server-side (future enhancement).
+
+### Testing Checklist
+- Unit test API client hooks (mock Axios responses).
+- Cypress/Playwright flows: login, create teacher, promote user, create exam, view proctor events.
+- Test unauthorized access: ensure non-admin tokens are rejected by the backend and the portal gracefully handles 401/403.
+
+### Deployment Notes
+- Build the portal (`npm run build`) and host via static hosting.
+- Configure environment variables (`VITE_API_BASE_URL`) per environment (dev, staging, prod).
+- Monitor backend logs for any 401/403 spikes indicating token issues.
+
+With these guidelines you can scaffold the admin portal quickly and iterate on additional features (audit logs, analytics, notification settings) without altering the core backend contracts.
