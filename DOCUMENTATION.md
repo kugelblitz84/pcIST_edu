@@ -64,7 +64,7 @@ curl -H "Authorization: Bearer <studentToken>" \
 - `GET /questions/:examId` – students – fetch questions for exam
 - `POST /attempt/:attemptId/submit` – students – submit answers `{ answers: [...] }`
 
-Example (create exam):
+Example (create exam with question payload):
 ```bash
 curl -X POST http://localhost:5000/api/exams/create \
   -H "Authorization: Bearer <teacherToken>" \
@@ -74,9 +74,32 @@ curl -X POST http://localhost:5000/api/exams/create \
     "description":"Chapters 1-3",
     "proctoredBy":"<proctorUserId>",
     "startTime":"2025-01-10T09:00:00Z",
-    "endTime":"2025-01-10T11:00:00Z"
+    "endTime":"2025-01-10T11:00:00Z",
+    "questions":[
+      {
+        "type":"mcq",
+        "text":"What is 2 + 2?",
+        "options":["1","2","3","4"],
+        "correctAnswer":"4",
+        "points":2,
+        "order":1
+      },
+      {
+        "type":"short",
+        "text":"Name the sorting algorithm with average O(n log n) complexity used by V8.",
+        "correctAnswer":"Timsort",
+        "points":3,
+        "order":2
+      }
+    ]
   }'
 ```
+
+Controller behavior notes (accuracy):
+- `createExam` validates role (teacher/admin), title, startTime/endTime, proctoredBy; computes durationMinutes; saves `Exam` with provided fields. The `Exam` schema currently does **not** define a `questions` array, so any `questions` sent are ignored by Mongoose unless the schema is extended. Create question documents separately against `Question` if you need persistence.
+- `startExamAttempt` (student only) prevents duplicate attempts per exam/student and creates an `Attempt` with status default `in-progress` and `startTime` now.
+- `getQuestionsForExam` fetches questions from `Question` collection by `exam` id; it does not time-gate delivery yet (stub for start/end window check).
+- `submitAnswers` (student only) forbids submits after exam end time, requires ownership of the attempt, sets `answers`, marks status `submitted`, and stamps `submittedAt`.
 
 Example (submit answers):
 ```bash

@@ -41,12 +41,35 @@ Express + MongoDB + Socket.IO backend for a proctored exam platform (soft procto
 - Socket events: `user_online`, `tabSwitch`, `windowFocusChange`, `examStarted`, `examEnded`, `proctoringAlert`, `screenshot-upload`; server emits `request-screenshot` and marks attempts `terminated` on tab/focus violations
 
 ## Examples
-Create exam (teacher/admin):
+Create exam (teacher/admin) — includes question payload (note: `Exam` schema currently ignores `questions`; persist questions via `Question` collection if needed):
 ```bash
 curl -X POST http://localhost:5000/api/exams/create \
    -H "Authorization: Bearer <teacherToken>" \
    -H "Content-Type: application/json" \
-   -d '{"title":"Midterm","proctoredBy":"<proctorId>","startTime":"2025-01-10T09:00:00Z","endTime":"2025-01-10T11:00:00Z"}'
+   -d '{
+      "title":"Midterm",
+      "description":"Chapters 1-3",
+      "proctoredBy":"<proctorId>",
+      "startTime":"2025-01-10T09:00:00Z",
+      "endTime":"2025-01-10T11:00:00Z",
+      "questions":[
+         {
+            "type":"mcq",
+            "text":"What is 2 + 2?",
+            "options":["1","2","3","4"],
+            "correctAnswer":"4",
+            "points":2,
+            "order":1
+         },
+         {
+            "type":"short",
+            "text":"Name the sorting algorithm used by V8.",
+            "correctAnswer":"Timsort",
+            "points":3,
+            "order":2
+         }
+      ]
+   }'
 ```
 
 Start attempt (student):
